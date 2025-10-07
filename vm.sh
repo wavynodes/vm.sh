@@ -12,13 +12,13 @@ display_header() {
 ========================================================================
  /$$$$$$$$       /$$     /$$       /$$   /$$       /$$$$$$$$       /$$   /$$
 |_____ $$       |  $$   /$$/      | $$$ | $$      | $$_____/      | $$  / $$
-     /$$/        \  $$ /$$/       | $$$$| $$      | $$            |  $$/ $$/
-    /$$/          \  $$$$/        | $$ $$ $$      | $$$$$          \  $$$$/ 
-   /$$/            \  $$/         | $$  $$$$      | $$__/           >$$  $$ 
-  /$$/              | $$          | $$\  $$$      | $$             /$$/\  $$ 
- /$$$$$$$$          | $$          | $$ \  $$      | $$$$$$$$      | $$  \ $$ 
-|________/          |__/          |__/  \__/      |________/      |__/  |__/ 
-                                                                             
+     /$$/        \  $$ /$$/       | $$$$| $$      | $$            |  $$/ $$
+    /$$/          \  $$$$/        | $$ $$ $$      | $$$$$          \  $$$$/
+   /$$/            \  $$/         | $$  $$$$      | $$__/           >$$  $$
+  /$$/              | $$          | $$\  $$$      | $$             /$$/\  $$
+ /$$$$$$$$          | $$          | $$ \  $$      | $$$$$$$$      | $$  \ $$
+|________/          |__/          |__/  \__/      |________/      |__/  |__/
+                                                                           
                             POWERED BY ZYNEX
 ========================================================================
 EOF
@@ -40,7 +40,6 @@ print_status() {
     esac
 }
 
-# (Everything below remains unchanged)
 # Function to validate input
 validate_input() {
     local type=$1
@@ -99,18 +98,18 @@ check_dependencies() {
     fi
 }
 
-# Function to cleanup temporary files
+# Cleanup temp files
 cleanup() {
-    if [ -f "user-data" ]; then rm -f "user-data"; fi
-    if [ -f "meta-data" ]; then rm -f "meta-data"; fi
+    [ -f "user-data" ] && rm -f "user-data"
+    [ -f "meta-data" ] && rm -f "meta-data"
 }
 
-# Function to get all VM configurations
+# VM list
 get_vm_list() {
     find "$VM_DIR" -name "*.conf" -exec basename {} .conf \; 2>/dev/null | sort
 }
 
-# Function to load VM configuration
+# Load VM config
 load_vm_config() {
     local vm_name=$1
     local config_file="$VM_DIR/$vm_name.conf"
@@ -118,7 +117,6 @@ load_vm_config() {
     if [[ -f "$config_file" ]]; then
         unset VM_NAME OS_TYPE CODENAME IMG_URL HOSTNAME USERNAME PASSWORD
         unset DISK_SIZE MEMORY CPUS SSH_PORT GUI_MODE PORT_FORWARDS IMG_FILE SEED_FILE CREATED
-        
         source "$config_file"
         return 0
     else
@@ -126,9 +124,6 @@ load_vm_config() {
         return 1
     fi
 }
-
-# (Rest of your script remains 100% identical)
-# ...
 
 # Initialize paths
 VM_DIR="${VM_DIR:-$HOME/vms}"
@@ -146,5 +141,61 @@ declare -A OS_OPTIONS=(
     ["Rocky Linux 9"]="rockylinux|9|https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2|rocky9|rocky|rocky"
 )
 
-# Start the main menu
+# Placeholder functions (you can replace these with actual VM actions)
+create_new_vm() { echo "Create VM not implemented yet"; }
+start_vm() { echo "Start VM \$1 not implemented yet"; }
+stop_vm() { echo "Stop VM \$1 not implemented yet"; }
+delete_vm() { echo "Delete VM \$1 not implemented yet"; }
+
+# =============================
+# Main interactive menu
+# =============================
+main_menu() {
+    display_header
+    echo "ZYNEX VM Manager Loaded Successfully!"
+    echo "Use this script to manage your VMs."
+    
+    while true; do
+        echo
+        echo "1) List VMs"
+        echo "2) Create VM"
+        echo "3) Start VM"
+        echo "4) Stop VM"
+        echo "5) Delete VM"
+        echo "0) Exit"
+        echo
+
+        read -p "Enter choice: " choice
+        case $choice in
+            1)
+                vms=($(get_vm_list))
+                if [ ${#vms[@]} -eq 0 ]; then
+                    echo "No VMs found."
+                else
+                    echo "VMs:"
+                    for vm in "${vms[@]}"; do
+                        echo " - $vm"
+                    done
+                fi
+                ;;
+            2) create_new_vm ;;
+            3) 
+                read -p "Enter VM name to start: " vm
+                start_vm "$vm"
+                ;;
+            4) 
+                read -p "Enter VM name to stop: " vm
+                stop_vm "$vm"
+                ;;
+            5) 
+                read -p "Enter VM name to delete: " vm
+                delete_vm "$vm"
+                ;;
+            0) echo "Exiting..."; exit 0 ;;
+            *) echo "Invalid choice" ;;
+        esac
+    done
+}
+
+# Run the menu
 main_menu
