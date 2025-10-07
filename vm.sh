@@ -5,6 +5,9 @@ set -euo pipefail
 # Enhanced Multi-VM Manager
 # =============================
 
+VM_DIR="${VM_DIR:-$HOME/vms}"
+mkdir -p "$VM_DIR"
+
 # Function to display header
 display_header() {
     clear
@@ -12,140 +15,118 @@ display_header() {
 ========================================================================
  /$$$$$$$$       /$$     /$$       /$$   /$$       /$$$$$$$$       /$$   /$$
 |_____ $$       |  $$   /$$/      | $$$ | $$      | $$_____/      | $$  / $$
-     /$$/        \  $$ /$$/       | $$$$| $$      | $$            |  $$/ $$
-    /$$/          \  $$$$/        | $$ $$ $$      | $$$$$          \  $$$$/
-   /$$/            \  $$/         | $$  $$$$      | $$__/           >$$  $$
-  /$$/              | $$          | $$\  $$$      | $$             /$$/\  $$
- /$$$$$$$$          | $$          | $$ \  $$      | $$$$$$$$      | $$  \ $$
-|________/          |__/          |__/  \__/      |________/      |__/  |__/
-                                                                           
+     /$$/        \  $$ /$$/       | $$$$| $$      | $$            |  $$/ $$/ 
+    /$$/          \  $$$$/        | $$ $$ $$      | $$$$$          \  $$$$/ 
+   /$$/            \  $$/         | $$  $$$$      | $$__/           >$$  $$ 
+  /$$/              | $$          | $$\  $$$      | $$             /$$/\  $$ 
+ /$$$$$$$$          | $$          | $$ \  $$      | $$$$$$$$      | $$  \ $$ 
+|________/          |__/          |__/  \__/      |________/      |__/  |__/ 
+                                                                             
                             POWERED BY ZYNEX
 ========================================================================
 EOF
-    echo
 }
 
 # Function to display colored output
 print_status() {
-    local type=$1
-    local message=$2
-    
+    local type=$1 message=$2
     case $type in
-        "INFO") echo -e "\033[1;34m[INFO]\033[0m $message" ;;
-        "WARN") echo -e "\033[1;33m[WARN]\033[0m $message" ;;
-        "ERROR") echo -e "\033[1;31m[ERROR]\033[0m $message" ;;
-        "SUCCESS") echo -e "\033[1;32m[SUCCESS]\033[0m $message" ;;
-        "INPUT") echo -e "\033[1;36m[INPUT]\033[0m $message" ;;
-        *) echo "[$type] $message" ;;
+        "INFO") echo -e "\033[1;34m[INFO]\033[0m $message";;
+        "WARN") echo -e "\033[1;33m[WARN]\033[0m $message";;
+        "ERROR") echo -e "\033[1;31m[ERROR]\033[0m $message";;
+        "SUCCESS") echo -e "\033[1;32m[SUCCESS]\033[0m $message";;
+        "INPUT") echo -e "\033[1;36m[INPUT]\033[0m $message";;
+        *) echo "[$type] $message";;
     esac
 }
 
-# Function to validate input
-validate_input() {
-    local type=$1
-    local value=$2
-    
-    case $type in
-        "number")
-            if ! [[ "$value" =~ ^[0-9]+$ ]]; then
-                print_status "ERROR" "Must be a number"
-                return 1
-            fi
-            ;;
-        "size")
-            if ! [[ "$value" =~ ^[0-9]+[GgMm]$ ]]; then
-                print_status "ERROR" "Must be a size with unit (e.g., 100G, 512M)"
-                return 1
-            fi
-            ;;
-        "port")
-            if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 23 ] || [ "$value" -gt 65535 ]; then
-                print_status "ERROR" "Must be a valid port number (23-65535)"
-                return 1
-            fi
-            ;;
-        "name")
-            if ! [[ "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-                print_status "ERROR" "VM name can only contain letters, numbers, hyphens, and underscores"
-                return 1
-            fi
-            ;;
-        "username")
-            if ! [[ "$value" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-                print_status "ERROR" "Username must start with a letter or underscore, and contain only letters, numbers, hyphens, and underscores"
-                return 1
-            fi
-            ;;
-    esac
-    return 0
-}
-
-# Function to check dependencies
+# Check dependencies
 check_dependencies() {
     local deps=("qemu-system-x86_64" "wget" "cloud-localds" "qemu-img")
-    local missing_deps=()
-    
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing_deps+=("$dep")
-        fi
+    local missing=()
+    for d in "${deps[@]}"; do
+        command -v "$d" >/dev/null || missing+=("$d")
     done
-    
-    if [ ${#missing_deps[@]} -ne 0 ]; then
-        print_status "ERROR" "Missing dependencies: ${missing_deps[*]}"
-        print_status "INFO" "On Ubuntu/Debian, try: sudo apt install qemu-system cloud-image-utils wget"
+    if [ ${#missing[@]} -ne 0 ]; then
+        print_status "ERROR" "Missing: ${missing[*]}"
+        print_status "INFO" "sudo apt install qemu-system cloud-image-utils wget"
         exit 1
     fi
 }
+check_dependencies
 
-# Cleanup temp files
-cleanup() {
-    [ -f "user-data" ] && rm -f "user-data"
-    [ -f "meta-data" ] && rm -f "meta-data"
-}
+# Cleanup
+cleanup() { rm -f user-data meta-data; }
 
-# VM list
-get_vm_list() {
-    find "$VM_DIR" -name "*.conf" -exec basename {} .conf \; 2>/dev/null | sort
-}
+# List VMs
+get_vm_list() { find "$VM_DIR" -name "*.conf" -exec basename {} .conf \; 2>/dev/null | sort; }
 
 # Load VM config
 load_vm_config() {
-    local vm_name=$1
-    local config_file="$VM_DIR/$vm_name.conf"
-    
-    if [[ -f "$config_file" ]]; then
+    local vm="$1" cfg="$VM_DIR/$vm.conf"
+    if [[ -f "$cfg" ]]; then
         unset VM_NAME OS_TYPE CODENAME IMG_URL HOSTNAME USERNAME PASSWORD
         unset DISK_SIZE MEMORY CPUS SSH_PORT GUI_MODE PORT_FORWARDS IMG_FILE SEED_FILE CREATED
-        source "$config_file"
+        source "$cfg"
         return 0
     else
-        print_status "ERROR" "Configuration for VM '$vm_name' not found"
+        print_status "ERROR" "VM '$vm' config not found"
         return 1
     fi
 }
 
-# Initialize paths
-VM_DIR="${VM_DIR:-$HOME/vms}"
-mkdir -p "$VM_DIR"
-
-# Supported OS list
+# Supported OS images
 declare -A OS_OPTIONS=(
-    ["Ubuntu 22.04"]="ubuntu|jammy|https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img|ubuntu22|ubuntu|ubuntu"
-    ["Ubuntu 24.04"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img|ubuntu24|ubuntu|ubuntu"
-    ["Debian 11"]="debian|bullseye|https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2|debian11|debian|debian"
-    ["Debian 12"]="debian|bookworm|https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2|debian12|debian|debian"
-    ["Fedora 40"]="fedora|40|https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-40-1.14.x86_64.qcow2|fedora40|fedora|fedora"
-    ["CentOS Stream 9"]="centos|stream9|https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2|centos9|centos|centos"
-    ["AlmaLinux 9"]="almalinux|9|https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2|almalinux9|alma|alma"
-    ["Rocky Linux 9"]="rockylinux|9|https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2|rocky9|rocky|rocky"
+    ["Ubuntu 22.04"]="ubuntu|jammy|https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    ["Ubuntu 24.04"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    ["Debian 11"]="debian|bullseye|https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2"
+    ["Debian 12"]="debian|bookworm|https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
 )
 
-# Placeholder functions (you can replace these with actual VM actions)
-create_new_vm() { echo "Create VM not implemented yet"; }
-start_vm() { echo "Start VM \$1 not implemented yet"; }
-stop_vm() { echo "Stop VM \$1 not implemented yet"; }
-delete_vm() { echo "Delete VM \$1 not implemented yet"; }
+# VM Actions
+create_new_vm() {
+    read -p "Enter VM name: " VM_NAME
+    [ -z "$VM_NAME" ] && { echo "Name required"; return; }
+    read -p "Select OS (Ubuntu 22.04/Ubuntu 24.04/Debian 11/Debian 12): " OS
+    IMG_URL="${OS_OPTIONS[$OS]##*|}"
+    [ -z "$IMG_URL" ] && { echo "Invalid OS"; return; }
+
+    DISK="$VM_DIR/$VM_NAME.qcow2"
+    echo "Creating disk..."
+    qemu-img create -f qcow2 "$DISK" 20G
+
+    echo "Downloading image..."
+    wget -O "$VM_DIR/$VM_NAME.img" "$IMG_URL"
+
+    # Save config
+    cat > "$VM_DIR/$VM_NAME.conf" <<EOF
+VM_NAME="$VM_NAME"
+IMG_FILE="$VM_DIR/$VM_NAME.img"
+DISK_FILE="$DISK"
+EOF
+
+    print_status "SUCCESS" "VM $VM_NAME created"
+}
+
+start_vm() {
+    local vm="$1"
+    load_vm_config "$vm" || return
+    echo "Starting $VM_NAME..."
+    qemu-system-x86_64 -m 2048 -hda "$DISK_FILE" -boot c -enable-kvm -vnc :1 &
+    print_status "SUCCESS" "$VM_NAME started (VNC :1)"
+}
+
+stop_vm() {
+    local vm="$1"
+    pkill -f "$VM_DIR/$vm.qcow2" && print_status "SUCCESS" "$vm stopped" || echo "Not running"
+}
+
+delete_vm() {
+    local vm="$1"
+    load_vm_config "$vm" || return
+    rm -f "$DISK_FILE" "$IMG_FILE" "$VM_DIR/$vm.conf"
+    print_status "SUCCESS" "$VM_NAME deleted"
+}
 
 # =============================
 # Main interactive menu
@@ -154,7 +135,6 @@ main_menu() {
     display_header
     echo "ZYNEX VM Manager Loaded Successfully!"
     echo "Use this script to manage your VMs."
-    
     while true; do
         echo
         echo "1) List VMs"
@@ -163,39 +143,19 @@ main_menu() {
         echo "4) Stop VM"
         echo "5) Delete VM"
         echo "0) Exit"
-        echo
-
-        read -p "Enter choice: " choice
-        case $choice in
-            1)
-                vms=($(get_vm_list))
-                if [ ${#vms[@]} -eq 0 ]; then
-                    echo "No VMs found."
-                else
-                    echo "VMs:"
-                    for vm in "${vms[@]}"; do
-                        echo " - $vm"
-                    done
-                fi
-                ;;
+        read -p "Enter choice: " c
+        case $c in
+            1) vms=($(get_vm_list))
+               [ ${#vms[@]} -eq 0 ] && echo "No VMs found." || printf " - %s\n" "${vms[@]}" ;;
             2) create_new_vm ;;
-            3) 
-                read -p "Enter VM name to start: " vm
-                start_vm "$vm"
-                ;;
-            4) 
-                read -p "Enter VM name to stop: " vm
-                stop_vm "$vm"
-                ;;
-            5) 
-                read -p "Enter VM name to delete: " vm
-                delete_vm "$vm"
-                ;;
+            3) read -p "VM name: " vm; start_vm "$vm" ;;
+            4) read -p "VM name: " vm; stop_vm "$vm" ;;
+            5) read -p "VM name: " vm; delete_vm "$vm" ;;
             0) echo "Exiting..."; exit 0 ;;
             *) echo "Invalid choice" ;;
         esac
     done
 }
 
-# Run the menu
+# Run
 main_menu
